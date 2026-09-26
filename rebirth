@@ -1,4 +1,5 @@
-task.wait(5)
+if not game:IsLoaded() then game.Loaded:Wait() end
+
 local PathfindingService = game:GetService("PathfindingService")
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
