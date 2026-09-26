@@ -180,8 +180,8 @@ local function startPathfindingProcess(targetPosition)
 end
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local GameUtil = require(ReplicatedStorage.Modules.GameUtil);
-local Clock = require(ReplicatedStorage.Modules.Clock)
+local GameUtil = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("GameUtil"));
+local Clock = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Clock"))
 servertime =  math.clamp(120-(math.floor(Clock.getServerTime()) - GameUtil.Data.lastSpawnFromBed),0,120)
 local localplayer = Players.LocalPlayer
 local PlayerGui = localplayer:WaitForChild("PlayerGui", 10)
