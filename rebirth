@@ -5,7 +5,7 @@ local localPlayer = Players.LocalPlayer
 
 -- 📍 전역 설정 값
 local WALK_SPEED = 18 
-
+task.wait(2)
 -- [기능 1] 계산된 경유지들을 맵에 구체로 보여주는 함수 (디버깅용)
 local function showWaypoints(waypoints)
 	local oldFolder = workspace:FindFirstChild("DebugWaypointFolder")
