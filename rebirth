@@ -127,7 +127,7 @@ end
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GameUtil = require(ReplicatedStorage.Modules.GameUtil);
 local Clock = require(ReplicatedStorage.Modules.Clock)
-servertime =  math.clamp(120-math.floor(Clock.getServerTime()) - GameUtil.Data.lastSpawnFromBed,0,120)
+servertime =  math.clamp(120-(math.floor(Clock.getServerTime()) - GameUtil.Data.lastSpawnFromBed),0,120)
 local localplayer = Players.LocalPlayer
 local PlayerGui = localplayer:WaitForChild("PlayerGui", 10)
 local functions = require(ReplicatedStorage.Game.functions)
