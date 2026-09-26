@@ -1,0 +1,264 @@
+local PathfindingService = game:GetService("PathfindingService")
+local Players = game:GetService("Players")
+
+local localPlayer = Players.LocalPlayer
+
+-- 📍 전역 설정 값
+local WALK_SPEED = 18 
+
+-- [기능 1] 계산된 경유지들을 맵에 구체로 보여주는 함수 (디버깅용)
+local function showWaypoints(waypoints)
+	local oldFolder = workspace:FindFirstChild("DebugWaypointFolder")
+	if oldFolder then oldFolder:Destroy() end
+	
+	local folder = Instance.new("Folder")
+	folder.Name = "DebugWaypointFolder"
+	folder.Parent = workspace
+	
+	print("📌 [시각화] 총 " .. #waypoints .. "개의 경유지를 표시합니다.")
+	
+	for i, waypoint in ipairs(waypoints) do
+		local part = Instance.new("Part")
+		part.Shape = Enum.PartType.Ball
+		part.Size = Vector3.new(1.2, 1.2, 1.2)
+		part.Position = waypoint.Position
+		part.Anchored = true
+		part.CanCollide = false
+		
+		if i == 1 then
+			part.Color = Color3.fromRGB(0, 255, 0)
+		elseif i == #waypoints then
+			part.Color = Color3.fromRGB(255, 0, 0)
+		elseif waypoint.Action == Enum.PathWaypointAction.Jump then
+			part.Color = Color3.fromRGB(255, 255, 0)
+		else
+			part.Color = Color3.fromRGB(0, 170, 255)
+		end
+		
+		local billboard = Instance.new("BillboardGui")
+		billboard.Size = UDim2.new(0, 40, 0, 20)
+		billboard.AlwaysOnTop = true
+		billboard.StudsOffset = Vector3.new(0, 1.5, 0)
+		
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.new(1, 0, 1, 0)
+		label.BackgroundTransparency = 1
+		label.TextColor3 = part.Color
+		label.TextSize = 12
+		label.Text = tostring(i)
+		label.Parent = billboard
+		
+		billboard.Parent = part
+		part.Parent = folder
+	end
+end
+
+-- [기능 2] 8초 제동 버그를 완벽히 해결한 논스톱 이동 함수
+local function walkAlongWaypoints(waypoints)
+	local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+	local humanoid = character:WaitForChild("Humanoid")
+	local rootPart = character:WaitForChild("HumanoidRootPart")
+	
+	humanoid.WalkSpeed = WALK_SPEED
+	humanoid.PlatformStand = false
+	rootPart.Anchored = false
+	
+	print("🚶 [이동] 8초 멈춤 버그가 해결된 순정 질주를 시작합니다.")
+	
+	for i = 2, #waypoints do
+		local targetWaypoint = waypoints[i]
+		
+		if targetWaypoint.Action == Enum.PathWaypointAction.Jump then
+			humanoid.Jump = true
+		end
+		
+		-- 1. 이동 명령 최초 실행
+		humanoid:MoveTo(targetWaypoint.Position)
+		
+		-- 2. 8초 타임아웃을 깨부수기 위한 안전 대기 룹
+		-- 캐릭터를 부르르 떨게 만들던 초고속 반복 연산(0.05초)을 버리고, 
+		-- 로블록스 엔진이 지칠 때쯤인 '1초' 주기로만 부하 없이 아주 여유롭게 체크합니다.
+		while true do
+			-- 로블록스 엔진이 강제로 멈추기 전에 1초마다 계속 이동 명령을 갱신해 줌 (8초 타이머 리셋)
+			local movementSignal = humanoid.MoveToFinished:Wait(1) 
+			-- 현재 위치와 목적지의 평면(X, Z) 거리를 계산 (Y축 바다 버그 완전 차단)
+			local pPos2D = Vector2.new(rootPart.Position.X, rootPart.Position.Z)
+			local tPos2D = Vector2.new(targetWaypoint.Position.X, targetWaypoint.Position.Z)
+			local distance2D = (pPos2D - tPos2D).Magnitude
+			
+			-- 수평 거리상 4.5스터드 이내로 도달했다면 완벽하게 도착한 것으로 간주
+			if distance2D <= 4.5 then
+				break
+			end
+			
+			-- 만약 거리가 아직 먼데도 로블록스 신호(movementSignal)가 도중에 끊겼거나 8초가 되려 한다면,
+			-- 멈추지 말고 계속 걸어가라고 명령을 다시 수리합니다.
+			humanoid:MoveTo(targetWaypoint.Position)
+		end
+	end
+	
+	print("✅ [완료] 긴 평지와 바다 모두 멈춤 없이 완벽하게 돌파 완료!")
+end
+
+-- [메인 컨트롤 함수] 파트파인딩 계산
+local function startPathfindingProcess(targetPosition)
+	local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
+	local rootPart = character:WaitForChild("HumanoidRootPart")
+	
+	local path = PathfindingService:CreatePath({
+		AgentRadius = 2,
+		AgentHeight = 5,
+		AgentCanJump = true
+	})
+	
+	local success, errorMessage = pcall(function()
+		path:ComputeAsync(rootPart.Position, targetPosition)
+	end)
+	
+	if success and path.Status == Enum.PathStatus.Success then
+		local waypoints = path:GetWaypoints()
+		
+		showWaypoints(waypoints)
+		walkAlongWaypoints(waypoints)
+	else
+		warn("❌ 경로 생성 실패 상태: " .. tostring(path.Status) .. " | 에러: " .. tostring(errorMessage))
+	end
+end
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local GameUtil = require(ReplicatedStorage.Modules.GameUtil);
+local Clock = require(ReplicatedStorage.Modules.Clock)
+servertime =  math.clamp(120-math.floor(Clock.getServerTime()) - GameUtil.Data.lastSpawnFromBed,0,120)
+local localplayer = Players.LocalPlayer
+local PlayerGui = localplayer:WaitForChild("PlayerGui", 10)
+local functions = require(ReplicatedStorage.Game.functions)
+
+local function spawn()
+    PlayerGui.SpawnGui.Enabled = false
+    PlayerGui.MainGui.Enabled = true
+    PlayerGui.Topbar.Enabled = true
+    workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+    functions.lockTorsoOrientation = true;
+end
+
+-- 1. 버튼이 메모리에 로드될 때까지 최대 10초간 안전하게 대기
+print(servertime)
+task.wait(servertime+1)
+local spawnGui = PlayerGui:WaitForChild("SpawnGui", 10)
+local customization = spawnGui:WaitForChild("Customization", 10)
+local bedButton = customization:WaitForChild("BedButton", 10)
+if bedButton then
+    print("[+] BedButton 탐지 완료. 클릭 시도 중...")
+
+    -- [방식 A] 익스플로잇 전용 함수 (firesignal) - 가장 확실하고 감지가 안 됨
+    if typeof(firesignal) == "function" then
+        pcall(function() firesignal(bedButton.Activated) end)
+        print("[+] firesignal 방식으로 클릭 신호를 보냈습니다.")
+    end
+    spawn()
+else
+    warn("[-] 오류: 10초 동안 대기했으나 BedButton을 찾지 못했습니다. UI 경로를 확인하세요.")
+end
+
+-- 📍 목적지 벡터 좌표 설정 (Z축 -2048개의 초장거리)
+local AttackPosition = Vector3.new(-125.29026794433594, -3.000000238418579, -2048.86669921875)
+
+-- 게임 시작 3초 후 안전하게 첫 연산 구동
+wait(1)
+startPathfindingProcess(AttackPosition)
+local function equip_pick()
+    local args = {
+	    buffer.fromstring("\000.\002")
+    }
+    game:GetService("ReplicatedStorage"):WaitForChild("ByteNetReliable"):FireServer(unpack(args))
+end
+local function equip_ROCK()
+    local args = {
+	    buffer.fromstring("\000.\003")
+    }
+    game:GetService("ReplicatedStorage"):WaitForChild("ByteNetReliable"):FireServer(unpack(args))
+end
+local function EatAll()
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local byteNetReliable = ReplicatedStorage:WaitForChild("ByteNetReliable")
+
+    local function eatItemByEntityID(idNumber)
+	    local itemBuffer = buffer.create(6)
+	    buffer.writeu8(itemBuffer, 0, 0)
+	    buffer.writeu8(itemBuffer, 1, 52)
+	    buffer.writeu16(itemBuffer, 2, idNumber)
+	    buffer.writeu8(itemBuffer, 4, 0)
+	    buffer.writeu8(itemBuffer, 5, 0)
+	    byteNetReliable:FireServer(itemBuffer)
+    end
+    for i, v in workspace.Items:GetChildren() do
+        if v.Name ~= "Essence" then continue end
+        eatItemByEntityID(v:GetAttribute("EntityID"))
+        print(v:GetAttribute("EntityID"))
+    end
+end
+local LocalPlayer = Players.LocalPlayer
+local TeleportService = game:GetService("TeleportService")
+local HttpService = game:GetService("HttpService")
+
+local statusFilePath = "AsterVIPRejoinStatus.json"
+
+-- [나갈 때] 이 함수를 호출하면 브섭 정보를 저장하고 재접속합니다.
+local function safeRejoinVIPServer()
+    local psId = game.PrivateServerId
+    local psOwnerId = workspace:GetAttribute("privateServerOwnerId") or game.PrivateServerOwnerId
+    
+    if writefile and HttpService then
+        local statusData = {
+            isRejoining = true,
+            privateServerId = psId,
+            privateServerOwnerId = psOwnerId,
+            timestamp = os.time()
+        }
+        writefile(statusFilePath, HttpService:JSONEncode(statusData))
+    end
+    
+    task.wait(0.5)
+    
+    if psId and psId ~= "" then
+        pcall(function()
+            TeleportService:TeleportToPrivateServer(game.PlaceId, psId, {LocalPlayer})
+        end)
+    else
+        pcall(function()
+            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+        end)
+    end
+end
+
+local vim = game:GetService("VirtualInputManager")
+local x, y = 500, 400 -- 클릭하고 싶은 화면의 픽셀 좌표
+local function Active()
+    --MouseButtonEvent 매개변수: (X좌표, Y좌표, 버튼종류(0은좌클릭), 누름여부(true/false), 게임객체)
+    vim:SendMouseButtonEvent(x, y, 0, true, game, 1)  -- 마우스 누르기
+    task.wait(0.05)
+    vim:SendMouseButtonEvent(x, y, 0, false, game, 1) -- 마우스 떼기
+end
+local picking = true
+equip_pick()
+workspace.Critters.ChildAdded:Connect(function(a0: Instance)
+    if a0.Name ~= "Giant" then return end
+    picking = false
+    equip_ROCK()
+    local attack = true
+    workspace.Critters.ChildRemoved:Connect(function(a1: Instance)
+        if a1.Name ~= "Giant" then return end
+        attack = false
+        print("Clear Giant")
+        wait(1)
+        EatAll()
+        startPathfindingProcess(Vector3.new(-146.17063903808594, -3.000000238418579, -2049.20751953125))
+        EatAll()
+        safeRejoinVIPServer()
+    end)
+    while attack and task.wait() do
+        Active()
+    end
+end)
+while picking and task.wait() do
+    Active()
+end
