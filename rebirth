@@ -1,13 +1,50 @@
 task.wait(5)
 local PathfindingService = game:GetService("PathfindingService")
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 
 local localPlayer = Players.LocalPlayer
-
--- 📍 전역 설정 값
 local WALK_SPEED = 18 
-task.wait(2)
--- [기능 1] 계산된 경유지들을 맵에 구체로 보여주는 함수 (디버깅용)
+
+-- 📍 실시간으로 추가되는 아이템 파트들에 패스스루 태그를 붙여주는 함수
+local function addModifierToPart(part)
+	if part:IsA("BasePart") and not part:FindFirstChildOfClass("PathfindingModifier") then
+		local modifier = Instance.new("PathfindingModifier")
+		modifier.PassThrough = true
+		modifier.Parent = part
+	end
+end
+
+-- 📍 아이템 모델 전체의 부속 파트들까지 실시간 스캔하는 함수
+local function ignoreItemObject(item)
+	if item:IsA("BasePart") then
+		addModifierToPart(item)
+	elseif item:IsA("Model") then
+		for _, part in ipairs(item:GetDescendants()) do
+			addModifierToPart(part)
+		end
+		-- 모델 내부에 나중에 추가되는 파트까지 추적
+		item.DescendantAdded:Connect(addModifierToPart)
+	end
+end
+
+-- 📍 게임 시작 시 기존 아이템 처리 및 앞으로 추가될 실시간 감지 이벤트 등록
+local function initRealtimeIgnore()
+	local itemsFolder = workspace:WaitForChild("Items", 5)
+	if not itemsFolder then return end
+	
+	-- 1. 기존에 이미 맵에 존재하던 아이템들 먼저 전부 무시 처리
+	for _, item in ipairs(itemsFolder:GetChildren()) do
+		ignoreItemObject(item)
+	end
+	
+	-- 2. 🔥 [핵심] 앞으로 새롭게 추가되는 아이템 오브젝트 실시간 무시 처리
+	itemsFolder.ChildAdded:Connect(function(newItem)
+		task.wait() -- 오브젝트가 완전히 로드될 때까지 1프레임 대기
+		ignoreItemObject(newItem)
+	end)
+end
+
 local function showWaypoints(waypoints)
 	local oldFolder = workspace:FindFirstChild("DebugWaypointFolder")
 	if oldFolder then oldFolder:Destroy() end
@@ -54,7 +91,6 @@ local function showWaypoints(waypoints)
 	end
 end
 
--- [기능 2] 8초 제동 버그를 완벽히 해결한 논스톱 이동 함수
 local function walkAlongWaypoints(waypoints)
 	local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 	local humanoid = character:WaitForChild("Humanoid")
@@ -64,44 +100,26 @@ local function walkAlongWaypoints(waypoints)
 	humanoid.PlatformStand = false
 	rootPart.Anchored = false
 	
-	print("🚶 [이동] 8초 멈춤 버그가 해결된 순정 질주를 시작합니다.")
+	print("🚶 [이동] 실시간 아이템을 무시한 최단거리 질주를 시작합니다.")
 	
-	for i = 2, #waypoints do
+	for i = 2, #waypoints - 1 do
 		local targetWaypoint = waypoints[i]
 		
 		if targetWaypoint.Action == Enum.PathWaypointAction.Jump then
 			humanoid.Jump = true
 		end
 		
-		-- 1. 이동 명령 최초 실행
 		humanoid:MoveTo(targetWaypoint.Position)
-		
-		-- 2. 8초 타임아웃을 깨부수기 위한 안전 대기 룹
-		-- 캐릭터를 부르르 떨게 만들던 초고속 반복 연산(0.05초)을 버리고, 
-		-- 로블록스 엔진이 지칠 때쯤인 '1초' 주기로만 부하 없이 아주 여유롭게 체크합니다.
-		while true do
-			-- 로블록스 엔진이 강제로 멈추기 전에 1초마다 계속 이동 명령을 갱신해 줌 (8초 타이머 리셋)
-			local movementSignal = humanoid.MoveToFinished:Wait(1) 
-			-- 현재 위치와 목적지의 평면(X, Z) 거리를 계산 (Y축 바다 버그 완전 차단)
-			local pPos2D = Vector2.new(rootPart.Position.X, rootPart.Position.Z)
-			local tPos2D = Vector2.new(targetWaypoint.Position.X, targetWaypoint.Position.Z)
-			local distance2D = (pPos2D - tPos2D).Magnitude
-			
-			-- 수평 거리상 4.5스터드 이내로 도달했다면 완벽하게 도착한 것으로 간주
-			if distance2D <= 4.5 then
-				break
-			end
-			
-			-- 만약 거리가 아직 먼데도 로블록스 신호(movementSignal)가 도중에 끊겼거나 8초가 되려 한다면,
-			-- 멈추지 말고 계속 걸어가라고 명령을 다시 수리합니다.
-			humanoid:MoveTo(targetWaypoint.Position)
-		end
+		task.wait() 
 	end
 	
-	print("✅ [완료] 긴 평지와 바다 모두 멈춤 없이 완벽하게 돌파 완료!")
+	local finalWaypoint = waypoints[#waypoints]
+	humanoid:MoveTo(finalWaypoint.Position)
+	humanoid.MoveToFinished:Wait()
+	
+	print("✅ [완료] 최종 목적지에 도달했습니다.")
 end
 
--- [메인 컨트롤 함수] 파트파인딩 계산
 local function startPathfindingProcess(targetPosition)
 	local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 	local rootPart = character:WaitForChild("HumanoidRootPart")
@@ -118,13 +136,15 @@ local function startPathfindingProcess(targetPosition)
 	
 	if success and path.Status == Enum.PathStatus.Success then
 		local waypoints = path:GetWaypoints()
-		
 		showWaypoints(waypoints)
 		walkAlongWaypoints(waypoints)
 	else
 		warn("❌ 경로 생성 실패 상태: " .. tostring(path.Status) .. " | 에러: " .. tostring(errorMessage))
 	end
 end
+
+-- 📍 스크립트 시작하자마자 실시간 무시 백그라운드 엔진 가동
+initRealtimeIgnore()
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GameUtil = require(ReplicatedStorage.Modules.GameUtil);
 local Clock = require(ReplicatedStorage.Modules.Clock)
