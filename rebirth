@@ -263,22 +263,17 @@ local function EatAll()
         print("정우: ["..v:GetAttribute("EntityID").."] 아이디 에센스 맛있다.")
     end
 end
-local LocalPlayer = Players.LocalPlayer
 local TeleportService = game:GetService("TeleportService")
 local HttpService = game:GetService("HttpService")
+local LocalPlayer = game:GetService("Players").LocalPlayer
 
-local statusFilePath = "AsterVIPRejoinStatus.json"
-
--- [나갈 때] 이 함수를 호출하면 브섭 정보를 저장하고 재접속합니다.
-local function safeRejoinVIPServer()
-    local psId = game.PrivateServerId
-    local psOwnerId = workspace:GetAttribute("privateServerOwnerId") or game.PrivateServerOwnerId
+function safeRejoinVIPServer()
+    local statusFilePath = "VIPRejoinStatus.json"
     
+    -- 1. 나갈 때 재접속 표식을 파일에 기록
     if writefile and HttpService then
         local statusData = {
             isRejoining = true,
-            privateServerId = psId,
-            privateServerOwnerId = psOwnerId,
             timestamp = os.time()
         }
         writefile(statusFilePath, HttpService:JSONEncode(statusData))
@@ -286,13 +281,22 @@ local function safeRejoinVIPServer()
     
     task.wait(0.5)
     
-    if psId and psId ~= "" then
+    -- 2. 🔐 [핵심 수식] 기존 방 재입장을 막고, 이 브섭 안에서 새로운 서버 인스턴스를 "예약(Reserve)" 합니다.
+    -- 이 처리를 해야만 보스가 죽은 방이 아니라, 보스가 처음부터 살아있는 깨끗한 새 브섭 방이 열립니다.
+    local success, reservedCode = pcall(function()
+        return TeleportService:ReserveServerAsync(game.PlaceId)
+    end)
+    
+    -- 3. 새로 생성된 무결점 브섭 인스턴스로 캐릭터를 강제 순간이동 시킵니다.
+    if success and reservedCode then
         pcall(function()
-            TeleportService:TeleportToPrivateServer(game.PlaceId, psId, {LocalPlayer})
+            TeleportService:TeleportToPrivateServer(game.PlaceId, reservedCode, {LocalPlayer})
         end)
     else
+        -- 예약 서버 생성에 실패했을 경우에만 기존 공유 링크로 안전 복귀 백업
+        local vipShareLink = "https://roblox.com"
         pcall(function()
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
+            TeleportService:TeleportToPlaceInstance(game.PlaceId, vipShareLink, LocalPlayer)
         end)
     end
 end
