@@ -1,3 +1,4 @@
+task.wait(5)
 local PathfindingService = game:GetService("PathfindingService")
 local Players = game:GetService("Players")
 
