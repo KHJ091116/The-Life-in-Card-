@@ -222,7 +222,7 @@ local function EatAll()
     for i, v in workspace.Items:GetChildren() do
         if v.Name ~= "Essence" then continue end
         eatItemByEntityID(v:GetAttribute("EntityID"))
-        print("정우: ["v:GetAttribute("EntityID").."] 아이디 에센스 맛있다.")
+        print("정우: ["..v:GetAttribute("EntityID").."] 아이디 에센스 맛있다.")
     end
 end
 local LocalPlayer = Players.LocalPlayer
