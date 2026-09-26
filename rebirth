@@ -6,7 +6,6 @@ local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
 local WALK_SPEED = 18 
 
--- 📍 실시간으로 추가되는 아이템 파트들에 패스스루 태그를 붙여주는 함수
 local function addModifierToPart(part)
 	if part:IsA("BasePart") and not part:FindFirstChildOfClass("PathfindingModifier") then
 		local modifier = Instance.new("PathfindingModifier")
@@ -15,7 +14,6 @@ local function addModifierToPart(part)
 	end
 end
 
--- 📍 아이템 모델 전체의 부속 파트들까지 실시간 스캔하는 함수
 local function ignoreItemObject(item)
 	if item:IsA("BasePart") then
 		addModifierToPart(item)
@@ -52,8 +50,6 @@ local function showWaypoints(waypoints)
 	local folder = Instance.new("Folder")
 	folder.Name = "DebugWaypointFolder"
 	folder.Parent = workspace
-	
-	print("📌 [시각화] 총 " .. #waypoints .. "개의 경유지를 표시합니다.")
 	
 	for i, waypoint in ipairs(waypoints) do
 		local part = Instance.new("Part")
@@ -100,7 +96,7 @@ local function walkAlongWaypoints(waypoints)
 	humanoid.PlatformStand = false
 	rootPart.Anchored = false
 	
-	print("🚶 [이동] 실시간 아이템을 무시한 최단거리 질주를 시작합니다.")
+	print("이린이 속도로 가겠다 컹")
 	
 	for i = 2, #waypoints - 1 do
 		local targetWaypoint = waypoints[i]
@@ -117,7 +113,7 @@ local function walkAlongWaypoints(waypoints)
 	humanoid:MoveTo(finalWaypoint.Position)
 	humanoid.MoveToFinished:Wait()
 	
-	print("✅ [완료] 최종 목적지에 도달했습니다.")
+	print("에너지음료 6캔 먹고 도착했다 컹")
 end
 
 local function startPathfindingProcess(targetPosition)
@@ -162,18 +158,17 @@ local function spawn()
 end
 
 -- 1. 버튼이 메모리에 로드될 때까지 최대 10초간 안전하게 대기
-print(servertime)
+print("스폰 하려면"..servertime.."초는 더 기다려야한다 멍청한 이린아")
 task.wait(servertime+1)
 local spawnGui = PlayerGui:WaitForChild("SpawnGui", 10)
 local customization = spawnGui:WaitForChild("Customization", 10)
 local bedButton = customization:WaitForChild("BedButton", 10)
 if bedButton then
-    print("[+] BedButton 탐지 완료. 클릭 시도 중...")
+    print("클릭했다 컹.")
 
     -- [방식 A] 익스플로잇 전용 함수 (firesignal) - 가장 확실하고 감지가 안 됨
     if typeof(firesignal) == "function" then
         pcall(function() firesignal(bedButton.Activated) end)
-        print("[+] firesignal 방식으로 클릭 신호를 보냈습니다.")
     end
     spawn()
 else
@@ -227,7 +222,7 @@ local function EatAll()
     for i, v in workspace.Items:GetChildren() do
         if v.Name ~= "Essence" then continue end
         eatItemByEntityID(v:GetAttribute("EntityID"))
-        print(v:GetAttribute("EntityID"))
+        print("정우: ["v:GetAttribute("EntityID").."] 아이디 에센스 맛있다.")
     end
 end
 local LocalPlayer = Players.LocalPlayer
@@ -282,7 +277,7 @@ workspace.Critters.ChildAdded:Connect(function(a0: Instance)
     workspace.Critters.ChildRemoved:Connect(function(a1: Instance)
         if a1.Name ~= "Giant" then return end
         attack = false
-        print("Clear Giant")
+        print("정우: 자이언트 먹었음.")
         wait(1)
         EatAll()
         startPathfindingProcess(Vector3.new(-146.17063903808594, -3.000000238418579, -2049.20751953125))
