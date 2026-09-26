@@ -1,50 +1,35 @@
 if not game:IsLoaded() then game.Loaded:Wait() end
-
 local PathfindingService = game:GetService("PathfindingService")
-local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local localPlayer = Players.LocalPlayer
 local WALK_SPEED = 18 
 
-local function addModifierToPart(part)
-	if part:IsA("BasePart") and not part:FindFirstChildOfClass("PathfindingModifier") then
-		local modifier = Instance.new("PathfindingModifier")
-		modifier.PassThrough = true
-		modifier.Parent = part
-	end
-end
-
-local function ignoreItemObject(item)
-	if item:IsA("BasePart") then
-		addModifierToPart(item)
-	elseif item:IsA("Model") then
-		for _, part in ipairs(item:GetDescendants()) do
-			addModifierToPart(part)
-		end
-		-- 모델 내부에 나중에 추가되는 파트까지 추적
-		item.DescendantAdded:Connect(addModifierToPart)
-	end
-end
-
--- 📍 게임 시작 시 기존 아이템 처리 및 앞으로 추가될 실시간 감지 이벤트 등록
-local function initRealtimeIgnore()
-	local itemsFolder = workspace:WaitForChild("Items", 5)
+-- [[ 1번 함수: 오직 Items 폴더 자식만 통과 무시 ]]
+local function applyItemsOnlyIgnore()
+	local itemsFolder = workspace:FindFirstChild("Items")
 	if not itemsFolder then return end
 	
-	-- 1. 기존에 이미 맵에 존재하던 아이템들 먼저 전부 무시 처리
 	for _, item in ipairs(itemsFolder:GetChildren()) do
-		ignoreItemObject(item)
+		if item:IsA("BasePart") and not item:FindFirstChildOfClass("PathfindingModifier") then
+			local modifier = Instance.new("PathfindingModifier")
+			modifier.PassThrough = true
+			modifier.Parent = item
+		elseif item:IsA("Model") then
+			for _, part in ipairs(item:GetDescendants()) do
+				if part:IsA("BasePart") and not part:FindFirstChildOfClass("PathfindingModifier") then
+					local modifier = Instance.new("PathfindingModifier")
+					modifier.PassThrough = true
+					modifier.Parent = part
+				end
+			end
+		end
 	end
-	
-	-- 2. 🔥 [핵심] 앞으로 새롭게 추가되는 아이템 오브젝트 실시간 무시 처리
-	itemsFolder.ChildAdded:Connect(function(newItem)
-		task.wait() -- 오브젝트가 완전히 로드될 때까지 1프레임 대기
-		ignoreItemObject(newItem)
-	end)
 end
 
-local function showWaypoints(waypoints)
+-- [[ 2번 함수: 3스터드 초촘촘 가상 경유지 생성 기능 ]]
+local function showWaypoints(rawWaypoints)
 	local oldFolder = workspace:FindFirstChild("DebugWaypointFolder")
 	if oldFolder then oldFolder:Destroy() end
 	
@@ -52,42 +37,67 @@ local function showWaypoints(waypoints)
 	folder.Name = "DebugWaypointFolder"
 	folder.Parent = workspace
 	
-	for i, waypoint in ipairs(waypoints) do
+	print("갈 waypoint 보여주겠다 컹.")
+	
+	local visualPoints = {}
+	local stepDistance = 3 -- 3스터드 간격 고정
+	
+	for i = 1, #rawWaypoints - 1 do
+		local startPos = rawWaypoints[i].Position
+		local endPos = rawWaypoints[i+1].Position
+		local distance = (endPos - startPos).Magnitude
+		local direction = (endPos - startPos).Unit
+		
+		table.insert(visualPoints, {Position = startPos, Action = rawWaypoints[i].Action})
+		
+		if distance > stepDistance then
+			for d = stepDistance, distance - (stepDistance / 2), stepDistance do
+				local interpolatedPos = startPos + (direction * d)
+				table.insert(visualPoints, {Position = interpolatedPos, Action = Enum.PathWaypointAction.Walk})
+			end
+		end
+	end
+	table.insert(visualPoints, {Position = rawWaypoints[#rawWaypoints].Position, Action = rawWaypoints[#rawWaypoints].Action})
+	
+	for i, wp in ipairs(visualPoints) do
 		local part = Instance.new("Part")
 		part.Shape = Enum.PartType.Ball
-		part.Size = Vector3.new(1.2, 1.2, 1.2)
-		part.Position = waypoint.Position
+		part.Size = Vector3.new(0.6, 0.6, 0.6)
+		part.Position = wp.Position
 		part.Anchored = true
 		part.CanCollide = false
 		
 		if i == 1 then
 			part.Color = Color3.fromRGB(0, 255, 0)
-		elseif i == #waypoints then
+		elseif i == #visualPoints then
 			part.Color = Color3.fromRGB(255, 0, 0)
-		elseif waypoint.Action == Enum.PathWaypointAction.Jump then
+		elseif wp.Action == Enum.PathWaypointAction.Jump then
 			part.Color = Color3.fromRGB(255, 255, 0)
 		else
 			part.Color = Color3.fromRGB(0, 170, 255)
 		end
 		
 		local billboard = Instance.new("BillboardGui")
-		billboard.Size = UDim2.new(0, 40, 0, 20)
+		billboard.Size = UDim2.new(0, 30, 0, 15)
 		billboard.AlwaysOnTop = true
-		billboard.StudsOffset = Vector3.new(0, 1.5, 0)
+		billboard.StudsOffset = Vector3.new(0, 1.0, 0)
 		
 		local label = Instance.new("TextLabel")
 		label.Size = UDim2.new(1, 0, 1, 0)
 		label.BackgroundTransparency = 1
 		label.TextColor3 = part.Color
-		label.TextSize = 12
+		label.TextSize = 8
 		label.Text = tostring(i)
 		label.Parent = billboard
 		
 		billboard.Parent = part
 		part.Parent = folder
 	end
+	
+	return visualPoints
 end
 
+-- [[ 3번 함수: 3스터드 자동 도착 버그를 해결한 프레임 동기화 질주 함수 ]]
 local function walkAlongWaypoints(waypoints)
 	local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 	local humanoid = character:WaitForChild("Humanoid")
@@ -97,29 +107,56 @@ local function walkAlongWaypoints(waypoints)
 	humanoid.PlatformStand = false
 	rootPart.Anchored = false
 	
-	print("이린이 속도로 가겠다 컹")
+	print("이린이 속도로 가겠다 컹.")
 	
-	for i = 2, #waypoints - 1 do
-		local targetWaypoint = waypoints[i]
+	local currentIdx = 2
+	local totalPoints = #waypoints
+	
+	-- 코루틴 대기를 위해 정지용 시그널 신호 생성
+	local completionSignal = Instance.new("BindableEvent")
+	
+	-- 🔥 [핵심 혁신] 가속도를 깎아먹지 않는 프레임당 동적 거리 트래킹 기믹
+	local connection
+	connection = RunService.Heartbeat:Connect(function()
+		if currentIdx > totalPoints then
+			connection:Disconnect()
+			completionSignal:Fire() -- 최종 완주 신호 발송
+			return
+		end
+		
+		local targetWaypoint = waypoints[currentIdx]
+		
+		-- 이동 명령 주입 (매 프레임 리셋되지 않도록 가속도 유지)
+		humanoid:MoveTo(targetWaypoint.Position)
 		
 		if targetWaypoint.Action == Enum.PathWaypointAction.Jump then
 			humanoid.Jump = true
 		end
 		
-		humanoid:MoveTo(targetWaypoint.Position)
-		task.wait() 
-	end
+		-- Y축(바다 허공 버그)을 제외한 수평 거리 실시간 연산
+		local pPos2D = Vector2.new(rootPart.Position.X, rootPart.Position.Z)
+		local tPos2D = Vector2.new(targetWaypoint.Position.X, targetWaypoint.Position.Z)
+		local distance2D = (pPos2D - tPos2D).Magnitude
+		
+		-- 3스터드 배열의 중심 반경 2.2스터드 내에 스쳐 지나가면 즉시 다음 번호 구체로 체인 타겟 변경!
+		if distance2D <= 2.2 then
+			currentIdx = currentIdx + 1
+		end
+	end)
 	
-	local finalWaypoint = waypoints[#waypoints]
-	humanoid:MoveTo(finalWaypoint.Position)
-	humanoid.MoveToFinished:Wait()
+	-- 최종 목적지 완주 신호가 올 때까지 메인 스레드 안전 대기
+	completionSignal.Event:Wait()
+	completionSignal:Destroy()
 	
-	print("에너지음료 6캔 먹고 도착했다 컹")
+	print("에너지음료 6캔 먹고 도착했다 컹.")
 end
 
+-- [[ 4번 함수: 메인 파트파인딩 총괄 프로세스 ]]
 local function startPathfindingProcess(targetPosition)
 	local character = localPlayer.Character or localPlayer.CharacterAdded:Wait()
 	local rootPart = character:WaitForChild("HumanoidRootPart")
+	
+	applyItemsOnlyIgnore()
 	
 	local path = PathfindingService:CreatePath({
 		AgentRadius = 2,
@@ -132,16 +169,16 @@ local function startPathfindingProcess(targetPosition)
 	end)
 	
 	if success and path.Status == Enum.PathStatus.Success then
-		local waypoints = path:GetWaypoints()
-		showWaypoints(waypoints)
-		walkAlongWaypoints(waypoints)
+		local rawWaypoints = path:GetWaypoints()
+		
+		-- 3스터드 보정 및 시각화 적용
+		local fullVisualWaypoints = showWaypoints(rawWaypoints)
+		walkAlongWaypoints(fullVisualWaypoints)
 	else
-		warn("❌ 경로 생성 실패 상태: " .. tostring(path.Status) .. " | 에러: " .. tostring(errorMessage))
+		warn("가다가 다리 부러졌다 컹." .. tostring(errorMessage))
 	end
 end
 
--- 📍 스크립트 시작하자마자 실시간 무시 백그라운드 엔진 가동
-initRealtimeIgnore()
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GameUtil = require(ReplicatedStorage.Modules.GameUtil);
 local Clock = require(ReplicatedStorage.Modules.Clock)
@@ -186,14 +223,14 @@ local pitch = math.rad(-4.364)
 local yaw = math.rad(90.477)
 local fixedRotation = CFrame.fromEulerAnglesYXZ(pitch, yaw, 0)
 
---if _G.CameraLockConnection then _G.CameraLockConnection:Disconnect() end
+if _G.CameraLockConnection then _G.CameraLockConnection:Disconnect() end
 
---_G.CameraLockConnection = game:GetService("RunService").RenderStepped:Connect(function()
-  --  local cam = workspace.CurrentCamera
-    --if not cam then return end
-    --cam.CameraType = Enum.CameraType.Scriptable
-    --cam.CFrame = CFrame.new(cam.CFrame.Position) * fixedRotation
---end)
+_G.CameraLockConnection = game:GetService("RunService").RenderStepped:Connect(function()
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    cam.CameraType = Enum.CameraType.Scriptable
+    cam.CFrame = CFrame.new(cam.CFrame.Position) * fixedRotation
+end)
 
 local function equip_pick()
     local args = {
